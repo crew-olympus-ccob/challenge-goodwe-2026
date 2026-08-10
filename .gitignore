@@ -1,0 +1,26 @@
+# dados gerados ao rodar
+data/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# segredos
+.env
+.env.*
+
+# editores e sistema
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# pacotes
+*.zip
