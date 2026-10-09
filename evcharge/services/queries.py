@@ -9,7 +9,7 @@ from decimal import Decimal
 from evcharge import config
 from evcharge.ai.forecast import sugerir_controle
 from evcharge.core.auth import hash_senha
-from evcharge.core.billing import calcular_custo, competencia_de, limites_competencia, q2
+from evcharge.core.billing import calcular_custo, competencia_de, limites_competencia, montar_faturas, q2
 from evcharge.core.repo import ATIVAS, Repo, sessao_de, tarifa_de
 from evcharge.db import Database, dec, iso, now_utc, parse
 
@@ -49,13 +49,18 @@ class Consultas:
         for s in sessoes:
             dia = s["inicio"].astimezone(self.tz).date()
             dias[dia] = dias.get(dia, 0.0) + s["kwh_total"]
-        energia = sum((s["custo_energia"] for s in sessoes), Decimal(0))
-        ocio = sum((s["custo_ociosidade"] for s in sessoes), Decimal(0))
+        # Os totais seguem exatamente o mesmo caminho de arredondamento das faturas:
+        # cada sessão em 4 casas, o total de cada morador em 2, e só então a soma geral.
+        # Somar os custos brutos e arredondar uma vez no fim daria alguns centavos de
+        # diferença, e a Visão geral mostraria um total diferente da tela de Faturas.
+        faturas = montar_faturas(sessoes, competencia, self.tz)
+        energia = q2(sum((f.valor_energia for f in faturas), Decimal(0)))
+        ocio = q2(sum((f.valor_ociosidade for f in faturas), Decimal(0)))
         return {
             "kwh": sum(s["kwh_total"] for s in sessoes),
-            "energia": q2(energia),
-            "ociosidade": q2(ocio),
-            "total": q2(energia + ocio),
+            "energia": energia,
+            "ociosidade": ocio,
+            "total": energia + ocio,
             "sessoes": len(sessoes),
             "min_ociosos": sum(s["min_ociosos"] for s in sessoes),
             "diario": sorted(dias.items()),

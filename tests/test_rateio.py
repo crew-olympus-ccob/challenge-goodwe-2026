@@ -2,7 +2,11 @@ import unittest
 from datetime import UTC, datetime
 from decimal import Decimal as D
 
+from evcharge import seed
 from evcharge.core.billing import Tarifa, TarifaNaoEncontrada, calcular_custo, limites_competencia, montar_faturas, tarifa_em
+from evcharge.core.invoices import gerar_faturas
+from evcharge.services.queries import Consultas
+from tests.helpers import banco_temporario
 
 
 def tarifa(**kw):
@@ -58,6 +62,32 @@ class TestRateio(unittest.TestCase):
         self.assertEqual(limites_competencia("2026-12")[1], datetime(2027, 1, 1, tzinfo=UTC))
         with self.assertRaises(ValueError):
             limites_competencia("2026-13")
+
+    def test_visao_geral_bate_com_as_faturas(self):
+        """A receita do mês na Visão geral precisa ser idêntica ao total faturado.
+
+        Somar os custos brutos e arredondar uma vez no fim produz alguns centavos a
+        menos que o caminho das faturas (4 casas por sessão, 2 casas por morador).
+        Este teste trava os dois caminhos no mesmo resultado.
+        """
+        db, pasta = banco_temporario()
+        try:
+            seed.gerar_historico(db, dias=90)
+            q = Consultas(db)
+            comp = q.competencia_atual()
+            gerar_faturas(db, comp, q.tz)
+
+            linhas = db.query(
+                "SELECT valor_energia, valor_ociosidade, valor_total FROM faturas WHERE competencia=?", (comp,))
+            self.assertTrue(linhas, "o histórico simulado deveria gerar faturas na competência atual")
+
+            visao = q.consumo(comp)
+            self.assertEqual(visao["energia"], sum(D(r["valor_energia"]) for r in linhas))
+            self.assertEqual(visao["ociosidade"], sum(D(r["valor_ociosidade"]) for r in linhas))
+            self.assertEqual(visao["total"], sum(D(r["valor_total"]) for r in linhas))
+        finally:
+            db.close()
+            pasta.cleanup()
 
 
 if __name__ == "__main__":
